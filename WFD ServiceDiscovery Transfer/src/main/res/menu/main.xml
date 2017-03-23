@@ -1,0 +1,35 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.MainActivity">
+    <item
+        android:id="@+id/action_clear_local_hazards"
+        android:icon="@drawable/ic_action_clear_local_hazards"
+        android:title="@string/action_clear_local_hazards"
+        android:showAsAction="always" />
+    <item
+        android:id="@+id/action_start_location_updates"
+        android:icon="@drawable/ic_action_start_location_updates"
+        android:title="@string/action_start_location_updates"
+        android:showAsAction="always" />
+    <item
+        android:id="@+id/action_stop_location_updates"
+        android:icon="@drawable/ic_action_stop_location_updates"
+        android:title="@string/action_stop_location_updates"
+        android:showAsAction="always" />
+    <item
+        android:id="@+id/action_toggle_wifi"
+        android:icon="@drawable/ic_action_toggle_wifi"
+        android:title="@string/action_toggle_wifi"
+        android:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/action_clear"
+        android:icon="@drawable/ic_action_clear"
+        android:title="@string/action_clear"
+        android:showAsAction="ifRoom|withText" />
+    <item
+        android:id="@+id/action_settings"
+        android:orderInCategory="100"
+        android:title="@string/action_settings"
+        android:showAsAction="never" />
+</menu>

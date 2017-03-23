@@ -1,0 +1,21 @@
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <CheckBoxPreference
+        android:key="allow_forwarding_checkbox"
+        android:title="@string/pref_title_allow_forwarding"
+        android:summary="@string/pref_description_allow_forwarding"
+        android:defaultValue="false" />
+
+    <CheckBoxPreference
+        android:key="enforce_higher_seq_checkbox"
+        android:title="@string/pref_title_enforce_higher_seq"
+        android:summary="@string/pref_description_enforce_higher_seq"
+        android:defaultValue="false" />
+
+    <CheckBoxPreference
+        android:key="update_from_original_source_checkbox"
+        android:title="@string/pref_title_update_from_original_source"
+        android:summary="@string/pref_description_update_from_original_source"
+        android:defaultValue="false" />
+
+</PreferenceScreen>

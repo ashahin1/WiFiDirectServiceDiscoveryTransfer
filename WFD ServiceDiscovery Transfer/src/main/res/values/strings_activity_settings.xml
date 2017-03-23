@@ -1,0 +1,18 @@
+<resources>
+        <string name="title_activity_settings">Settings</string>
+
+    <!-- Strings related to Settings -->
+
+    <!-- Example General settings -->
+    <string name="pref_header_general">General</string>
+
+    <string name="pref_title_allow_forwarding">Allow forwarding hazards</string>
+    <string name="pref_description_allow_forwarding">Controls weather a received hazard should be reported to nearby devices or not</string>
+
+    <string name="pref_title_enforce_higher_seq">Accepts hazards with higher sequence numbers only</string>
+    <string name="pref_description_enforce_higher_seq">Controls weather to accept a hazard with any sequence number or with a sequence number higher than highest received sequence number so far. This setting is per device.</string>
+
+    <string name="pref_title_update_from_original_source">Update hazards by their original sources only</string>
+    <string name="pref_description_update_from_original_source">Control weather to update a stored hazard by its original sender only or by any other device</string>
+
+</resources>
