@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WfdAds" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/wfd_primary</item>
+        <item name="colorOnPrimary">@color/wfd_on_primary</item>
+        <item name="colorPrimaryContainer">@color/wfd_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/wfd_on_primary_container</item>
+        <item name="colorSecondary">@color/wfd_secondary</item>
+        <item name="colorOnSecondary">@color/wfd_on_secondary</item>
+        <item name="colorError">@color/wfd_error</item>
+        <item name="colorErrorContainer">@color/wfd_error_container</item>
+        <item name="colorOnErrorContainer">@color/wfd_on_error_container</item>
+    </style>
+</resources>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name">WFD ServiceDiscovery</string>
+
+    <string name="button_start_service">Start</string>
+    <string name="button_stop_service">Stop</string>
+    <string name="button_add_service">Add Hazard</string>
+    <string name="button_discover">Discover</string>
+    <string name="button_fix">Fix</string>
+    <string name="content_desc_center_map">Center map on current location</string>
+
+    <string name="action_clear_local_hazards">Clear Local Hazards</string>
+    <string name="action_start_location_updates">Start GPS Updates</string>
+    <string name="action_stop_location_updates">Stop GPS Updates</string>
+    <string name="action_toggle_wifi">Wi-Fi Settings</string>
+    <string name="action_export_csv">Export CSV Log</string>
+    <string name="action_export_jsonl">Export JSONL Log</string>
+    <string name="action_clear">Clear Log</string>
+    <string name="action_settings">Settings</string>
+
+    <string name="status_node_fmt">Node: %1$s</string>
+    <string name="status_p2p_on">P2P: ON</string>
+    <string name="status_p2p_off">P2P: OFF</string>
+    <string name="status_loc_on">GPS: Ready</string>
+    <string name="status_loc_tracking">GPS: Live</string>
+    <string name="status_loc_off">GPS: OFF</string>
+    <string name="status_hazards_fmt">L:%1$d / R:%2$d</string>
+    <string name="status_forwarding_on">Relay: ON</string>
+    <string name="status_forwarding_off">Relay: OFF</string>
+
+    <string name="log_header">Experiment Telemetry Log</string>
+    <string name="log_empty_hint">Long-press the map to place a test hazard or tap Start to begin ADS discovery.</string>
+
+    <string name="warning_missing_permissions">Grant Nearby Wi-Fi Devices &amp; Location permissions to run ADS discovery.</string>
+    <string name="warning_location_disabled">System Location Mode is OFF. Android requires Location Mode ON for Wi-Fi Direct peer/service discovery.</string>
+    <string name="warning_wifi_disabled">Wi-Fi is OFF. Turn Wi-Fi ON for Wi-Fi Direct discovery.</string>
+    <string name="warning_p2p_disabled">Wi-Fi Direct is OFF. Keep Wi-Fi ON and turn Mobile Hotspot OFF.</string>
+
+    <string name="msg_local_hazard_added">Added local hazard at (%1$.5f, %2$.5f)</string>
+    <string name="msg_local_hazard_invalidated" tools:ignore="PluralsCandidate">Marked local hazard #%1$d invalid (propagating clear)</string>
+    <string name="msg_no_location_fix">Waiting for GPS/network fix, or long-press the map to place a hazard.</string>
+    <string name="msg_export_success">Exported experiment telemetry log</string>
+    <string name="msg_export_empty">No events recorded to export yet</string>
+    <string name="msg_export_failed">Failed to write exported telemetry file</string>
+</resources>

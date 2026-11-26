@@ -1,0 +1,3 @@
+# Keep osmdroid classes referenced via reflection if minification is later enabled
+-keep class org.osmdroid.** { *; }
+-dontwarn org.osmdroid.**

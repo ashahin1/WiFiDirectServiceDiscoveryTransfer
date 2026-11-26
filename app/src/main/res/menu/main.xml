@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_clear_local_hazards"
+        android:icon="@drawable/ic_action_clear_local_hazards"
+        android:title="@string/action_clear_local_hazards"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_toggle_location_updates"
+        android:icon="@drawable/ic_action_start_location_updates"
+        android:title="@string/action_start_location_updates"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_toggle_wifi"
+        android:icon="@drawable/ic_action_toggle_wifi"
+        android:title="@string/action_toggle_wifi"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_export_csv"
+        android:orderInCategory="50"
+        android:title="@string/action_export_csv"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_export_jsonl"
+        android:orderInCategory="60"
+        android:title="@string/action_export_jsonl"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_clear"
+        android:icon="@drawable/ic_action_clear"
+        android:orderInCategory="70"
+        android:title="@string/action_clear"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_settings"
+        android:orderInCategory="100"
+        android:title="@string/action_settings"
+        app:showAsAction="never" />
+
+</menu>
