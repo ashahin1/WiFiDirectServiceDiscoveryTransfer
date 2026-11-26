@@ -110,8 +110,10 @@ class PlatformLocationSource(context: Context) {
     }
 
     fun stopUpdates() {
-        runCatching {
+        try {
             LocationManagerCompat.removeUpdates(locationManager, listener)
+        } catch (_: SecurityException) {
+            // Permission may have been revoked while tracking was active
         }
         _isTracking.value = false
     }

@@ -1,18 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-        <string name="title_activity_settings">Settings</string>
+    <string name="title_activity_settings">Settings</string>
 
-    <!-- Strings related to Settings -->
-
-    <!-- Example General settings -->
-    <string name="pref_header_general">General</string>
+    <string name="pref_category_ads">ADS Protocol Policy</string>
+    <string name="pref_category_timing">Timing &amp; Expiration</string>
 
     <string name="pref_title_allow_forwarding">Allow forwarding hazards</string>
-    <string name="pref_description_allow_forwarding">Controls weather a received hazard should be reported to nearby devices or not</string>
+    <string name="pref_description_allow_forwarding">Controls whether a received hazard should be re-advertised to nearby devices.</string>
 
-    <string name="pref_title_enforce_higher_seq">Accepts hazards with higher sequence numbers only</string>
-    <string name="pref_description_enforce_higher_seq">Controls weather to accept a hazard with any sequence number or with a sequence number higher than highest received sequence number so far. This setting is per device.</string>
+    <string name="pref_title_enforce_higher_seq">Accept higher sequence numbers only</string>
+    <string name="pref_description_enforce_higher_seq">Controls whether to accept any unseen sequence number or only sequence numbers higher than the highest seen per origin node.</string>
 
-    <string name="pref_title_update_from_original_source">Update hazards by their original sources only</string>
-    <string name="pref_description_update_from_original_source">Control weather to update a stored hazard by its original sender only or by any other device</string>
+    <string name="pref_title_update_from_original_source">Update hazards from original sender only</string>
+    <string name="pref_description_update_from_original_source">Controls whether an existing remote hazard is updated only by the sender first heard or by any forwarding device.</string>
 
+    <string name="pref_title_max_ttl_seconds">Hazard TTL (seconds)</string>
+    <string name="pref_dialog_max_ttl_seconds">Enter lifetime in seconds (5–3600)</string>
+
+    <string name="pref_title_discovery_period_seconds">Discovery interval (seconds)</string>
+    <string name="pref_dialog_discovery_period_seconds">Enter scan period in seconds (2–300)</string>
 </resources>

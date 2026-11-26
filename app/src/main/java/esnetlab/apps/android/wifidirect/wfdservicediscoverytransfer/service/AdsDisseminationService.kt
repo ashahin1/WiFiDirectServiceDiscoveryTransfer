@@ -13,9 +13,11 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.edit
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
+import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.R
 import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.location.PlatformLocationSource
 import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.protocol.AdsPolicyConfig
 import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.protocol.AdsProtocolEngine
@@ -27,6 +29,7 @@ import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.telemetry.Ex
 import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.transport.AlertTransport
 import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.transport.TransportEvent
 import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.transport.WifiDirectDnsSdTransport
+import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.ui.MainActivity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,7 +98,7 @@ class AdsDisseminationService : LifecycleService() {
             initialNextSeqNo = initialSeqNo,
             initialPolicy = initialPolicy,
             onSeqAllocated = { nextSeq ->
-                nodeStatePrefs.edit().putInt(KEY_CUR_SEQ_NO, nextSeq).apply()
+                nodeStatePrefs.edit { putInt(KEY_CUR_SEQ_NO, nextSeq) }
             }
         )
 
@@ -494,28 +497,26 @@ class AdsDisseminationService : LifecycleService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            this,
+            REQ_CODE_LAUNCH,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_alert)
             .setContentTitle("WFD Alert Dissemination Active")
             .setContentText(contentText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(contentPendingIntent)
             .addAction(0, "Stop", stopPendingIntent)
-
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-        if (launchIntent != null) {
-            launchIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            val contentPendingIntent = PendingIntent.getActivity(
-                this,
-                REQ_CODE_LAUNCH,
-                launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            builder.setContentIntent(contentPendingIntent)
-        }
-
-        return builder.build()
+            .build()
     }
 
     private fun publishUiState() {
@@ -540,7 +541,7 @@ class AdsDisseminationService : LifecycleService() {
         val existing = nodeStatePrefs.getString(KEY_NODE_ID, null)
         if (!existing.isNullOrBlank()) return existing
         val generated = AdsWireCodec.generateNodeId()
-        nodeStatePrefs.edit().putString(KEY_NODE_ID, generated).apply()
+        nodeStatePrefs.edit { putString(KEY_NODE_ID, generated) }
         return generated
     }
 

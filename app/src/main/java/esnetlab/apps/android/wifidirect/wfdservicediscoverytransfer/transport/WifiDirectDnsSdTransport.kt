@@ -209,9 +209,13 @@ class WifiDirectDnsSdTransport(
                     )
                 }
             }
-            p2pListener = listener
-            runCatching {
-                mgr.registerWifiP2pListener(ContextCompat.getMainExecutor(appContext), listener)
+            if (hasWifiDirectPermission()) {
+                p2pListener = listener
+                try {
+                    mgr.registerWifiP2pListener(ContextCompat.getMainExecutor(appContext), listener)
+                } catch (_: SecurityException) {
+                    p2pListener = null
+                }
             }
         } else {
             val receiver = object : BroadcastReceiver() {
