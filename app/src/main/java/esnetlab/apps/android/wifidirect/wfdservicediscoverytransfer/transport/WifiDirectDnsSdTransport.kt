@@ -20,6 +20,7 @@ import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.protocol.Ads
 import esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.protocol.HazardRecord
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -50,10 +51,14 @@ class WifiDirectDnsSdTransport(
     private var channel: WifiP2pManager.Channel? = null
     private var commandScope: CoroutineScope? = null
     private var commandChannel: Channel<P2pCommand>? = null
+    private var cleanupJob: Job? = null
     private var stateReceiver: BroadcastReceiver? = null
     private var p2pListener: WifiP2pManager.WifiP2pListener? = null
+    private var monitoringStarted = false
     private var started = false
     private var isListening = false
+    private var serviceRequestRegistered = false
+    private var p2pEnabled: Boolean? = null
 
     private val serviceListener = WifiP2pManager.DnsSdServiceResponseListener { _, _, _ ->
         // Records are decoded deterministically in txtListener directly via fullDomain + record map.
@@ -84,30 +89,50 @@ class WifiDirectDnsSdTransport(
         }
     }
 
-    override fun start() {
-        if (started) return
+    override fun startStateMonitoring() {
+        monitoringStarted = true
+        val pair = ensureChannelInitialized() ?: return
+        registerP2pStateMonitoring(pair.first, pair.second)
+    }
 
-        val mgr = appContext.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
-        if (mgr == null) {
-            _events.tryEmit(TransportEvent.Error("Wi-Fi Direct (WIFI_P2P_SERVICE) is unavailable"))
-            return
+    override fun refreshState() {
+        if (!monitoringStarted && !started) return
+        val pair = ensureChannelInitialized() ?: return
+        registerP2pStateMonitoring(pair.first, pair.second)
+    }
+
+    override fun stopStateMonitoring() {
+        monitoringStarted = false
+        p2pEnabled = null
+        if (started) {
+            stop()
         }
-
-        val ch = mgr.initialize(appContext, Looper.getMainLooper()) {
-            _events.tryEmit(TransportEvent.Error("Wi-Fi Direct framework channel disconnected"))
-            if (started) {
-                reinitializeChannel()
+        unregisterP2pStateMonitoring()
+        val ch = channel
+        channel = null
+        manager = null
+        val pendingCleanup = cleanupJob
+        cleanupJob = null
+        if (ch != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            if (pendingCleanup != null && pendingCleanup.isActive) {
+                pendingCleanup.invokeOnCompletion {
+                    runCatching { ch.close() }
+                }
+            } else {
+                runCatching { ch.close() }
             }
         }
-        if (ch == null) {
-            _events.tryEmit(TransportEvent.Error("Failed to initialize Wi-Fi Direct channel"))
-            return
-        }
+    }
 
-        manager = mgr
-        channel = ch
+    override fun start() {
+        if (started) return
+        val pair = ensureChannelInitialized() ?: return
+        val mgr = pair.first
+        val ch = pair.second
+
         started = true
         isListening = false
+        serviceRequestRegistered = false
 
         mgr.setDnsSdResponseListeners(ch, serviceListener, txtListener)
         registerP2pStateMonitoring(mgr, ch)
@@ -118,6 +143,8 @@ class WifiDirectDnsSdTransport(
         commandChannel = queue
 
         scope.launch {
+            cleanupJob?.join()
+            cleanupJob = null
             for (cmd in queue) {
                 when (cmd) {
                     is P2pCommand.Publish -> handlePublish(cmd.nodeId, cmd.hazards)
@@ -131,8 +158,7 @@ class WifiDirectDnsSdTransport(
         if (!started) return
         started = false
         isListening = false
-
-        unregisterP2pStateMonitoring()
+        serviceRequestRegistered = false
 
         commandChannel?.close()
         commandChannel = null
@@ -141,11 +167,15 @@ class WifiDirectDnsSdTransport(
 
         val mgr = manager
         val ch = channel
-        manager = null
-        channel = null
+        if (!monitoringStarted) {
+            unregisterP2pStateMonitoring()
+            p2pEnabled = null
+            manager = null
+            channel = null
+        }
 
         if (mgr != null && ch != null) {
-            CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).launch {
+            cleanupJob = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).launch {
                 runCatching {
                     awaitAction("clearLocalServices") { listener ->
                         mgr.clearLocalServices(ch, listener)
@@ -157,7 +187,7 @@ class WifiDirectDnsSdTransport(
                         stopListeningCompat(mgr, ch)
                     }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                if (!monitoringStarted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                     runCatching { ch.close() }
                 }
             }
@@ -187,29 +217,78 @@ class WifiDirectDnsSdTransport(
             ) == PackageManager.PERMISSION_GRANTED
         }
 
+    private fun ensureChannelInitialized(): Pair<WifiP2pManager, WifiP2pManager.Channel>? {
+        val mgr = manager
+            ?: (appContext.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager)?.also {
+                manager = it
+            }
+        if (mgr == null) {
+            _events.tryEmit(TransportEvent.Error("Wi-Fi Direct (WIFI_P2P_SERVICE) is unavailable"))
+            return null
+        }
+
+        val existingCh = channel
+        if (existingCh != null) {
+            return mgr to existingCh
+        }
+
+        val newCh = mgr.initialize(appContext, Looper.getMainLooper()) {
+            serviceRequestRegistered = false
+            isListening = false
+            channel = null
+            _events.tryEmit(TransportEvent.Error("Wi-Fi Direct framework channel disconnected"))
+            if (started || monitoringStarted) {
+                reinitializeChannel()
+            }
+        }
+        if (newCh == null) {
+            _events.tryEmit(TransportEvent.Error("Failed to initialize Wi-Fi Direct channel"))
+            return null
+        }
+        channel = newCh
+        mgr.setDnsSdResponseListeners(newCh, serviceListener, txtListener)
+        return mgr to newCh
+    }
+
     private fun reinitializeChannel() {
         val mgr = manager ?: return
+        serviceRequestRegistered = false
+        isListening = false
         val newCh = mgr.initialize(appContext, Looper.getMainLooper()) {
+            serviceRequestRegistered = false
+            isListening = false
+            channel = null
             _events.tryEmit(TransportEvent.Error("Wi-Fi Direct framework channel disconnected again"))
         }
         channel = newCh
         if (newCh != null) {
             mgr.setDnsSdResponseListeners(newCh, serviceListener, txtListener)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                requestInitialP2pState(mgr, newCh)
+            }
+        }
+    }
+
+    private fun emitP2pState(enabled: Boolean) {
+        val previous = p2pEnabled
+        p2pEnabled = enabled
+        if (!enabled) {
+            serviceRequestRegistered = false
+            isListening = false
+        }
+        if (previous != enabled) {
+            _events.tryEmit(TransportEvent.P2pAvailabilityChanged(enabled = enabled))
         }
     }
 
     private fun registerP2pStateMonitoring(mgr: WifiP2pManager, ch: WifiP2pManager.Channel) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            val listener = object : WifiP2pManager.WifiP2pListener {
-                override fun onP2pStateChanged(state: Int) {
-                    _events.tryEmit(
-                        TransportEvent.P2pAvailabilityChanged(
-                            enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED
-                        )
-                    )
+            if (p2pListener == null && hasWifiDirectPermission()) {
+                val listener = object : WifiP2pManager.WifiP2pListener {
+                    override fun onP2pStateChanged(state: Int) {
+                        emitP2pState(enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+                    }
                 }
-            }
-            if (hasWifiDirectPermission()) {
                 p2pListener = listener
                 try {
                     mgr.registerWifiP2pListener(ContextCompat.getMainExecutor(appContext), listener)
@@ -217,26 +296,26 @@ class WifiDirectDnsSdTransport(
                     p2pListener = null
                 }
             }
-        } else {
+        } else if (stateReceiver == null) {
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
                     if (intent?.action == WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION) {
                         val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
-                        _events.tryEmit(
-                            TransportEvent.P2pAvailabilityChanged(
-                                enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED
-                            )
-                        )
+                        emitP2pState(enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
                     }
                 }
             }
             stateReceiver = receiver
-            ContextCompat.registerReceiver(
+            val sticky = ContextCompat.registerReceiver(
                 appContext,
                 receiver,
                 IntentFilter(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION),
                 ContextCompat.RECEIVER_EXPORTED
             )
+            if (sticky != null && sticky.hasExtra(WifiP2pManager.EXTRA_WIFI_STATE)) {
+                val state = sticky.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
+                emitP2pState(enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -266,11 +345,7 @@ class WifiDirectDnsSdTransport(
         if (!hasWifiDirectPermission()) return
         runCatching {
             mgr.requestP2pState(ch) { state ->
-                _events.tryEmit(
-                    TransportEvent.P2pAvailabilityChanged(
-                        enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED
-                    )
-                )
+                emitP2pState(enabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
             }
         }
     }
@@ -285,6 +360,17 @@ class WifiDirectDnsSdTransport(
                 TransportEvent.AdvertiseResult(
                     success = false,
                     detail = "Missing Wi-Fi Direct runtime permission"
+                )
+            )
+            return
+        }
+
+        if (p2pEnabled == false) {
+            _events.tryEmit(
+                TransportEvent.AdvertiseResult(
+                    success = false,
+                    reasonCode = WifiP2pManager.BUSY,
+                    detail = "Skipped advertise: Wi-Fi Direct is OFF"
                 )
             )
             return
@@ -370,38 +456,38 @@ class WifiDirectDnsSdTransport(
             return
         }
 
-        val clearFail = awaitAction("clearServiceRequests") { listener ->
-            mgr.clearServiceRequests(ch, listener)
-        }
-        if (clearFail != null) {
+        if (p2pEnabled == false) {
             _events.tryEmit(
                 TransportEvent.DiscoveryResult(
                     success = false,
-                    reasonCode = clearFail,
-                    detail = "clearServiceRequests failed (${describeReason(clearFail)})"
+                    reasonCode = WifiP2pManager.BUSY,
+                    detail = "Skipped discovery: Wi-Fi Direct is OFF (enable Wi-Fi and turn Hotspot off)"
                 )
             )
             return
         }
 
-        val req = WifiP2pDnsSdServiceRequest.newInstance()
-        val addReqFail = awaitAction("addServiceRequest") { listener ->
-            mgr.addServiceRequest(ch, req, listener)
-        }
-        if (addReqFail != null) {
-            _events.tryEmit(
-                TransportEvent.DiscoveryResult(
-                    success = false,
-                    reasonCode = addReqFail,
-                    detail = "addServiceRequest failed (${describeReason(addReqFail)})"
-                )
-            )
-            return
+        if (!serviceRequestRegistered) {
+            if (!registerServiceRequest(mgr, ch)) {
+                return
+            }
+            serviceRequestRegistered = true
         }
 
-        val discFail = awaitAction("discoverServices") { listener ->
+        var discFail = awaitAction("discoverServices") { listener ->
             mgr.discoverServices(ch, listener)
         }
+        if (discFail == WifiP2pManager.NO_SERVICE_REQUESTS) {
+            serviceRequestRegistered = false
+            if (!registerServiceRequest(mgr, ch)) {
+                return
+            }
+            serviceRequestRegistered = true
+            discFail = awaitAction("discoverServices") { listener ->
+                mgr.discoverServices(ch, listener)
+            }
+        }
+
         if (discFail != null) {
             _events.tryEmit(
                 TransportEvent.DiscoveryResult(
@@ -418,6 +504,42 @@ class WifiDirectDnsSdTransport(
                 )
             )
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun registerServiceRequest(
+        mgr: WifiP2pManager,
+        ch: WifiP2pManager.Channel
+    ): Boolean {
+        val clearFail = awaitAction("clearServiceRequests") { listener ->
+            mgr.clearServiceRequests(ch, listener)
+        }
+        if (clearFail != null) {
+            _events.tryEmit(
+                TransportEvent.DiscoveryResult(
+                    success = false,
+                    reasonCode = clearFail,
+                    detail = "clearServiceRequests failed (${describeReason(clearFail)})"
+                )
+            )
+            return false
+        }
+
+        val req = WifiP2pDnsSdServiceRequest.newInstance()
+        val addReqFail = awaitAction("addServiceRequest") { listener ->
+            mgr.addServiceRequest(ch, req, listener)
+        }
+        if (addReqFail != null) {
+            _events.tryEmit(
+                TransportEvent.DiscoveryResult(
+                    success = false,
+                    reasonCode = addReqFail,
+                    detail = "addServiceRequest failed (${describeReason(addReqFail)})"
+                )
+            )
+            return false
+        }
+        return true
     }
 
     @SuppressLint("MissingPermission")

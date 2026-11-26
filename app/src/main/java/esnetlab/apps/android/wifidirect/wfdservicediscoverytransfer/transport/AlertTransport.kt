@@ -28,6 +28,9 @@ sealed interface TransportEvent {
 
 interface AlertTransport {
     val events: Flow<TransportEvent>
+    fun startStateMonitoring() {}
+    fun refreshState() {}
+    fun stopStateMonitoring() {}
     fun start()
     fun stop()
     fun publishHazards(nodeId: String, hazards: List<HazardRecord>)

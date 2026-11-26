@@ -75,6 +75,7 @@ class MainActivity : AppCompatActivity() {
             if (hasLocationPermission()) {
                 boundService?.startLocationUpdates()
             }
+            boundService?.refreshEnvironmentStatus()
             if (startRequestedAfterPermissions) {
                 startRequestedAfterPermissions = false
                 if (hasDiscoveryPermission()) {
@@ -381,6 +382,22 @@ class MainActivity : AppCompatActivity() {
                 binding.txtWarning.setText(R.string.warning_location_disabled)
                 binding.btnWarningFix.setOnClickListener {
                     runCatching { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
+                }
+            }
+
+            !latestState.isWifiEnabled -> {
+                binding.bannerWarning.visibility = View.VISIBLE
+                binding.txtWarning.setText(R.string.warning_wifi_disabled)
+                binding.btnWarningFix.setOnClickListener {
+                    openWifiSettingsPanel()
+                }
+            }
+
+            (latestState.isP2pStateKnown || latestState.isRunning) && !latestState.isP2pEnabled -> {
+                binding.bannerWarning.visibility = View.VISIBLE
+                binding.txtWarning.setText(R.string.warning_p2p_disabled)
+                binding.btnWarningFix.setOnClickListener {
+                    openWifiSettingsPanel()
                 }
             }
 

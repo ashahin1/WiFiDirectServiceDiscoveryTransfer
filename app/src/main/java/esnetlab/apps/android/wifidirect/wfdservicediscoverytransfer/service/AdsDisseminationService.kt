@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -42,6 +43,8 @@ data class AdsUiState(
     val localNodeId: String = "",
     val isRunning: Boolean = false,
     val isP2pEnabled: Boolean = false,
+    val isP2pStateKnown: Boolean = false,
+    val isWifiEnabled: Boolean = true,
     val isLocationEnabled: Boolean = false,
     val isLocationTracking: Boolean = false,
     val lastLocation: Location? = null,
@@ -66,6 +69,9 @@ class AdsDisseminationService : LifecycleService() {
     private lateinit var locationSource: PlatformLocationSource
     private lateinit var p2pTransport: WifiDirectDnsSdTransport
     private lateinit var transport: AlertTransport
+    private val wifiManager: WifiManager? by lazy {
+        applicationContext.getSystemService(WifiManager::class.java)
+    }
     private val logger = ExperimentLogger()
 
     private val _uiState = MutableStateFlow(AdsUiState())
@@ -73,6 +79,7 @@ class AdsDisseminationService : LifecycleService() {
 
     private var isDisseminating = false
     private var isP2pEnabled = false
+    private var isP2pStateKnown = false
     private var statusMessage: String? = null
     private var ttlTickerJob: Job? = null
     private var discoveryTickerJob: Job? = null
@@ -116,6 +123,7 @@ class AdsDisseminationService : LifecycleService() {
                 handleTransportEvent(event)
             }
         }
+        transport.startStateMonitoring()
 
         lifecycleScope.launch {
             locationSource.lastLocation.collect {
@@ -155,7 +163,7 @@ class AdsDisseminationService : LifecycleService() {
     override fun onDestroy() {
         stopTickers()
         locationSource.stopUpdates()
-        transport.stop()
+        transport.stopStateMonitoring()
         defaultPrefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
         super.onDestroy()
     }
@@ -181,11 +189,19 @@ class AdsDisseminationService : LifecycleService() {
             detail = "Foreground dissemination active"
         )
 
-        val currentHazards = engine.getHazardsToAdvertise()
-        if (currentHazards.isNotEmpty()) {
-            transport.publishHazards(engine.localNodeId, currentHazards)
+        if (isP2pStateKnown && !isP2pEnabled) {
+            logger.record(
+                localNodeId = engine.localNodeId,
+                type = EventType.DISCOVER_FAIL,
+                detail = "Waiting for Wi-Fi Direct (P2P is currently OFF)"
+            )
+        } else {
+            val currentHazards = engine.getHazardsToAdvertise()
+            if (currentHazards.isNotEmpty()) {
+                transport.publishHazards(engine.localNodeId, currentHazards)
+            }
+            transport.triggerDiscovery()
         }
-        transport.triggerDiscovery()
 
         startTickers()
         updateNotification()
@@ -223,8 +239,8 @@ class AdsDisseminationService : LifecycleService() {
     fun addLocalHazard(lat: Double, lng: Double) {
         val (_, step) = engine.addLocalHazard(lat, lng)
         recordProtocolEvents(step.events)
-        if (step.advertisementChanged && isDisseminating) {
-            transport.publishHazards(engine.localNodeId, engine.getHazardsToAdvertise())
+        if (step.advertisementChanged) {
+            publishActiveHazardsIfReady()
         }
         statusMessage = null
         updateNotification()
@@ -234,8 +250,8 @@ class AdsDisseminationService : LifecycleService() {
     fun invalidateLocalHazard(key: HazardKey) {
         val step = engine.invalidateLocalHazard(key)
         recordProtocolEvents(step.events)
-        if (step.advertisementChanged && isDisseminating) {
-            transport.publishHazards(engine.localNodeId, engine.getHazardsToAdvertise())
+        if (step.advertisementChanged) {
+            publishActiveHazardsIfReady()
         }
         updateNotification()
         publishUiState()
@@ -244,8 +260,8 @@ class AdsDisseminationService : LifecycleService() {
     fun clearAllLocalHazards() {
         val step = engine.clearAllLocalHazards()
         recordProtocolEvents(step.events)
-        if (step.advertisementChanged && isDisseminating) {
-            transport.publishHazards(engine.localNodeId, engine.getHazardsToAdvertise())
+        if (step.advertisementChanged) {
+            publishActiveHazardsIfReady()
         }
         updateNotification()
         publishUiState()
@@ -256,6 +272,7 @@ class AdsDisseminationService : LifecycleService() {
             startDissemination()
             return
         }
+        transport.refreshState()
         logger.record(
             localNodeId = engine.localNodeId,
             type = EventType.DISCOVER_TRIGGERED,
@@ -286,8 +303,8 @@ class AdsDisseminationService : LifecycleService() {
         val oldPeriod = engine.snapshot().policy.discoveryPeriodSeconds
         val newPolicy = readPolicyFromPreferences()
         val step = engine.updatePolicy(newPolicy)
-        if (step.advertisementChanged && isDisseminating) {
-            transport.publishHazards(engine.localNodeId, engine.getHazardsToAdvertise())
+        if (step.advertisementChanged) {
+            publishActiveHazardsIfReady()
         }
         if (isDisseminating && newPolicy.discoveryPeriodSeconds != oldPeriod) {
             restartDiscoveryTicker()
@@ -297,6 +314,7 @@ class AdsDisseminationService : LifecycleService() {
 
     fun refreshEnvironmentStatus() {
         locationSource.fetchLastKnownLocation()
+        transport.refreshState()
         publishUiState()
     }
 
@@ -317,7 +335,7 @@ class AdsDisseminationService : LifecycleService() {
                 val step = engine.tickOneSecond()
                 recordProtocolEvents(step.events)
                 if (step.advertisementChanged) {
-                    transport.publishHazards(engine.localNodeId, engine.getHazardsToAdvertise())
+                    publishActiveHazardsIfReady()
                 }
                 if (step.events.isNotEmpty() ||
                     engine.snapshot().localHazards.any { !it.isValid } ||
@@ -337,7 +355,7 @@ class AdsDisseminationService : LifecycleService() {
             while (isActive && isDisseminating) {
                 val periodMs = engine.snapshot().policy.discoveryPeriodSeconds * 1_000L
                 delay(periodMs)
-                if (isDisseminating) {
+                if (isDisseminating && (!isP2pStateKnown || isP2pEnabled)) {
                     logger.record(
                         localNodeId = engine.localNodeId,
                         type = EventType.DISCOVER_TRIGGERED,
@@ -367,20 +385,34 @@ class AdsDisseminationService : LifecycleService() {
                         shouldRepublish = true
                     }
                 }
-                if (shouldRepublish && isDisseminating) {
-                    transport.publishHazards(engine.localNodeId, engine.getHazardsToAdvertise())
+                if (shouldRepublish) {
+                    publishActiveHazardsIfReady()
                 }
                 updateNotification()
                 publishUiState()
             }
 
             is TransportEvent.P2pAvailabilityChanged -> {
+                val wasEnabled = isP2pEnabled
+                isP2pStateKnown = true
                 isP2pEnabled = event.enabled
                 logger.record(
                     localNodeId = engine.localNodeId,
                     type = EventType.P2P_STATE_CHANGED,
                     detail = "enabled=${event.enabled}"
                 )
+                if (!wasEnabled && event.enabled && isDisseminating) {
+                    val currentHazards = engine.getHazardsToAdvertise()
+                    if (currentHazards.isNotEmpty()) {
+                        transport.publishHazards(engine.localNodeId, currentHazards)
+                    }
+                    logger.record(
+                        localNodeId = engine.localNodeId,
+                        type = EventType.DISCOVER_TRIGGERED,
+                        detail = "p2p-enabled"
+                    )
+                    transport.triggerDiscovery()
+                }
                 publishUiState()
             }
 
@@ -519,6 +551,12 @@ class AdsDisseminationService : LifecycleService() {
             .build()
     }
 
+    private fun publishActiveHazardsIfReady() {
+        if (!isDisseminating) return
+        if (isP2pStateKnown && !isP2pEnabled) return
+        transport.publishHazards(engine.localNodeId, engine.getHazardsToAdvertise())
+    }
+
     private fun publishUiState() {
         val snap = engine.snapshot()
         val logLines = logger.uiEvents.value.map { ExperimentLogger.formatDisplayLine(it) }
@@ -526,6 +564,8 @@ class AdsDisseminationService : LifecycleService() {
             localNodeId = snap.localNodeId,
             isRunning = isDisseminating,
             isP2pEnabled = isP2pEnabled,
+            isP2pStateKnown = isP2pStateKnown,
+            isWifiEnabled = wifiManager?.isWifiEnabled == true,
             isLocationEnabled = locationSource.isLocationEnabled(),
             isLocationTracking = locationSource.isTracking.value,
             lastLocation = locationSource.lastLocation.value,
