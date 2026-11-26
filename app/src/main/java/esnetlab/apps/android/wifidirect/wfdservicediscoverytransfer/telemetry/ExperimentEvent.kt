@@ -9,6 +9,7 @@ enum class EventType {
     ADVERTISE_OK,
     ADVERTISE_FAIL,
     DISCOVER_TRIGGERED,
+    DISCOVER_OK,
     DISCOVER_FAIL,
     RX_ACCEPTED,
     RX_UPDATED,

@@ -905,25 +905,7 @@ class WifiDirectDnsSdTransport(
     private suspend fun awaitAction(
         @Suppress("UNUSED_PARAMETER") opName: String,
         block: (WifiP2pManager.ActionListener) -> Unit
-    ): Int? = withTimeoutOrNull(COMMAND_TIMEOUT_MS) {
-        suspendCancellableCoroutine { cont ->
-            try {
-                block(object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() {
-                        if (cont.isActive) cont.resume(null)
-                    }
-
-                    override fun onFailure(reason: Int) {
-                        if (cont.isActive) cont.resume(reason)
-                    }
-                })
-            } catch (_: SecurityException) {
-                if (cont.isActive) cont.resume(REASON_SECURITY_EXCEPTION)
-            } catch (_: RuntimeException) {
-                if (cont.isActive) cont.resume(WifiP2pManager.ERROR)
-            }
-        }
-    } ?: REASON_TIMEOUT
+    ): Int? = awaitActionResult(COMMAND_TIMEOUT_MS, block)
 
     companion object {
         private const val COMMAND_TIMEOUT_MS = 5_000L
@@ -934,6 +916,34 @@ class WifiDirectDnsSdTransport(
         private const val MAX_TRACKED_TXT_INSTANCES = 64
         internal const val REASON_TIMEOUT = -1001
         internal const val REASON_SECURITY_EXCEPTION = -1002
+
+        private class ActionOutcome(val failureReason: Int?)
+
+        internal suspend fun awaitActionResult(
+            timeoutMs: Long = COMMAND_TIMEOUT_MS,
+            block: (WifiP2pManager.ActionListener) -> Unit
+        ): Int? {
+            val outcome = withTimeoutOrNull(timeoutMs) {
+                suspendCancellableCoroutine { cont ->
+                    try {
+                        block(object : WifiP2pManager.ActionListener {
+                            override fun onSuccess() {
+                                if (cont.isActive) cont.resume(ActionOutcome(null))
+                            }
+
+                            override fun onFailure(reason: Int) {
+                                if (cont.isActive) cont.resume(ActionOutcome(reason))
+                            }
+                        })
+                    } catch (_: SecurityException) {
+                        if (cont.isActive) cont.resume(ActionOutcome(REASON_SECURITY_EXCEPTION))
+                    } catch (_: RuntimeException) {
+                        if (cont.isActive) cont.resume(ActionOutcome(WifiP2pManager.ERROR))
+                    }
+                }
+            }
+            return if (outcome == null) REASON_TIMEOUT else outcome.failureReason
+        }
 
         internal fun describeReason(
             reason: Int,

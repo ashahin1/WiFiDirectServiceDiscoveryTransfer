@@ -80,6 +80,7 @@ class AdsDisseminationService : LifecycleService() {
     private var isDisseminating = false
     private var isP2pEnabled = false
     private var isP2pStateKnown = false
+    private var lastDiscoverySucceeded = false
     private var statusMessage: String? = null
     private var ttlTickerJob: Job? = null
     private var discoveryTickerJob: Job? = null
@@ -181,6 +182,7 @@ class AdsDisseminationService : LifecycleService() {
         }
 
         isDisseminating = true
+        lastDiscoverySucceeded = false
         statusMessage = null
         transport.start()
         logger.record(
@@ -213,6 +215,7 @@ class AdsDisseminationService : LifecycleService() {
         locationSource.stopUpdates()
         if (isDisseminating) {
             isDisseminating = false
+            lastDiscoverySucceeded = false
             transport.stop()
             logger.record(
                 localNodeId = engine.localNodeId,
@@ -272,6 +275,7 @@ class AdsDisseminationService : LifecycleService() {
             startDissemination()
             return
         }
+        lastDiscoverySucceeded = false
         transport.refreshState()
         logger.record(
             localNodeId = engine.localNodeId,
@@ -396,6 +400,9 @@ class AdsDisseminationService : LifecycleService() {
                 val wasEnabled = isP2pEnabled
                 isP2pStateKnown = true
                 isP2pEnabled = event.enabled
+                if (!event.enabled) {
+                    lastDiscoverySucceeded = false
+                }
                 logger.record(
                     localNodeId = engine.localNodeId,
                     type = EventType.P2P_STATE_CHANGED,
@@ -425,7 +432,17 @@ class AdsDisseminationService : LifecycleService() {
             }
 
             is TransportEvent.DiscoveryResult -> {
-                if (!event.success) {
+                if (event.success) {
+                    if (!lastDiscoverySucceeded) {
+                        lastDiscoverySucceeded = true
+                        logger.record(
+                            localNodeId = engine.localNodeId,
+                            type = EventType.DISCOVER_OK,
+                            detail = event.detail
+                        )
+                    }
+                } else {
+                    lastDiscoverySucceeded = false
                     logger.record(
                         localNodeId = engine.localNodeId,
                         type = EventType.DISCOVER_FAIL,
@@ -435,10 +452,11 @@ class AdsDisseminationService : LifecycleService() {
             }
 
             is TransportEvent.ChannelRecovered -> {
+                lastDiscoverySucceeded = false
                 logger.record(
                     localNodeId = engine.localNodeId,
                     type = EventType.P2P_STATE_CHANGED,
-                    detail = "channel re-initialized after BUSY"
+                    detail = "channel re-initialized after BUSY/error"
                 )
                 if (engine.getHazardsToAdvertise().isNotEmpty()) {
                     publishActiveHazardsIfReady()

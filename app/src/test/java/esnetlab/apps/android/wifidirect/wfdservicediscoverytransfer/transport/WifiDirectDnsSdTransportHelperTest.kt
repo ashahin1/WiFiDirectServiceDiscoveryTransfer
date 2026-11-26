@@ -2,8 +2,10 @@ package esnetlab.apps.android.wifidirect.wfdservicediscoverytransfer.transport
 
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -123,5 +125,33 @@ class WifiDirectDnsSdTransportHelperTest {
                 sdkInt = Build.VERSION_CODES.BAKLAVA
             )
         )
+    }
+
+    @Test
+    fun awaitActionResultReturnsNullOnSuccessAndDistinguishesTimeoutFailureAndExceptions() = runTest {
+        val successResult = WifiDirectDnsSdTransport.awaitActionResult(timeoutMs = 1_000L) { listener ->
+            listener.onSuccess()
+        }
+        assertNull(successResult)
+
+        val busyResult = WifiDirectDnsSdTransport.awaitActionResult(timeoutMs = 1_000L) { listener ->
+            listener.onFailure(WifiP2pManager.BUSY)
+        }
+        assertEquals(WifiP2pManager.BUSY, busyResult)
+
+        val timeoutResult = WifiDirectDnsSdTransport.awaitActionResult(timeoutMs = 100L) {
+            // Never invoke onSuccess or onFailure.
+        }
+        assertEquals(WifiDirectDnsSdTransport.REASON_TIMEOUT, timeoutResult)
+
+        val securityResult = WifiDirectDnsSdTransport.awaitActionResult(timeoutMs = 1_000L) {
+            throw SecurityException("Missing NEARBY_WIFI_DEVICES")
+        }
+        assertEquals(WifiDirectDnsSdTransport.REASON_SECURITY_EXCEPTION, securityResult)
+
+        val runtimeResult = WifiDirectDnsSdTransport.awaitActionResult(timeoutMs = 1_000L) {
+            throw IllegalStateException("Channel broken")
+        }
+        assertEquals(WifiP2pManager.ERROR, runtimeResult)
     }
 }
