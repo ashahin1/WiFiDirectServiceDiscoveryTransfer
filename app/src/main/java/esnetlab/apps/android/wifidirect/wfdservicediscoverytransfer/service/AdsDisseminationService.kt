@@ -434,6 +434,17 @@ class AdsDisseminationService : LifecycleService() {
                 }
             }
 
+            is TransportEvent.ChannelRecovered -> {
+                logger.record(
+                    localNodeId = engine.localNodeId,
+                    type = EventType.P2P_STATE_CHANGED,
+                    detail = "channel re-initialized after BUSY"
+                )
+                if (engine.getHazardsToAdvertise().isNotEmpty()) {
+                    publishActiveHazardsIfReady()
+                }
+            }
+
             is TransportEvent.Error -> {
                 logger.record(
                     localNodeId = engine.localNodeId,

@@ -23,6 +23,8 @@ sealed interface TransportEvent {
         val detail: String = ""
     ) : TransportEvent
 
+    data object ChannelRecovered : TransportEvent
+
     data class Error(val message: String) : TransportEvent
 }
 
